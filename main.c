@@ -32,123 +32,25 @@
 #include "ht32f5xxxx_gpio.h"
 #include <string.h>
 #include <stdio.h> 
+#include "usart_int.h" // for Rx interrupt
 #define MAXTIMINGS	85
 
-#include<stdlib.h>
-#include<math.h>
-long int p,q,n,t,flag,e[100],d[100],temp[100],j,m[100],en[100],i;
-char msg[100] = "Michael";
-int prime(long int);
-void ce();
-long int cd(long int);
-void encrypt();
-void decrypt();
-
-int prime(long int pr) {
-	int i;
-	j=sqrt(pr);
-	for (i=2;i<=j;i++) {
-		if(pr%i==0)
-		    return 0;
-	}
-	return 1;
-}
-
-void ce() {
-	int k;
-	k=0;
-	for (i=2;i<t;i++) {
-		if(t%i==0)
-		    continue;
-
-		flag=prime(i);
-
-		if(flag==1&&i!=p&&i!=q) {
-			e[k]=i;
-			flag=cd(e[k]);
-			if(flag>0) {
-				d[k]=flag;
-				k++;
-			}
-			if(k==99)
-			        break;
-		}
-
-	}
-
-}
-
-long int cd(long int x) {
-	long int k=1;
-	while(1) {
-		k=k+t;
-		if(k%x==0)
-		    return(k/x);
-	}
-}
-
-void encrypt() {
-	long int pt,ct,key=e[0],k,len;
-	i=0;
-	len=strlen(msg);
-	while(i!=len) {
-		pt=m[i];
-		pt=pt-96;
-		k=1;
-		for (j=0;j<key;j++) {
-			k=k*pt;
-			k=k%n;
-		}
-		temp[i]=k;
-		ct=k+96;
-		en[i]=ct;
-		i++;
-	}
-	en[i]=-1;
-
-	printf("THE ENCRYPTED MESSAGE IS\n");
-	for (i=0;en[i]!=-1;i++)
-		printf("%c",en[i]);
-	printf("\n");
-}
-
-void decrypt() {
-	long int pt,ct,key=d[0],k;
-	i=0;
-	while(en[i]!=-1) {
-		ct=temp[i];
-		k=1;
-		for (j=0;j<key;j++) {
-			k=k*ct;
-			k=k%n;
-		}
-		pt=k+96;
-		m[i]=pt;
-		i++;
-	}
-	m[i]=-1;
-	printf("THE DECRYPTED MESSAGE IS\n");
-	for (i=0;m[i]!=-1;i++)
-		printf("%c",m[i]);
-	printf("\n");
-}
-
-
 int dht11_dat[5] = { 0, 0, 0, 0, 0 };
+CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
+
 void delayms(int n_ms){
 	int i = 0, j = 0;
 	for(i= 0; i < n_ms;i++)
 		for(j= 0; j<13000;j++)
 			;
 }
+
 void delayus(int n_us){
 	int i = 0, j = 0;
 	for(i= 0; i < n_us;i++)
 		for(j= 0; j<13;j++)
 			;
 }
-
-CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
 
 void read_dht11_dat()
 {
@@ -159,7 +61,7 @@ void read_dht11_dat()
  
 	dht11_dat[0] = dht11_dat[1] = dht11_dat[2] = dht11_dat[3] = dht11_dat[4] = 0;
 	HTCFG_OUTPUT_LED1_CLK(CKCUClock) = 1;
-  CKCU_PeripClockConfig(CKCUClock, ENABLE);
+	CKCU_PeripClockConfig(CKCUClock, ENABLE);
 	
 	/* pull pin down for 18 milliseconds */
 	//GPIO_WriteOutBits( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, SET );
@@ -172,7 +74,7 @@ void read_dht11_dat()
 	/* prepare to read the pin */
 	GPIO_DirectionConfig(HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, GPIO_DIR_IN);
 	GPIO_ReadInBit( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN );
-  GPIO_InputConfig( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, ENABLE);
+	GPIO_InputConfig( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, ENABLE);
 	//printf( "BIT = %d\n", j );
 	
 	/* detect change and read data */
@@ -219,87 +121,74 @@ void read_dht11_dat()
 		}else{
 			GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, RESET );
 		}
-		/*
-		dht11_dat[2]*=11;
-		dht11_dat[0]*=13;
-		printf("%d%d", dht11_dat[2], dht11_dat[0]);
-		*/
 	}
-	//else  {
-	//	printf( "Data not good, skip\n" );
-	//}
 }
 
-/* Global functions ----------------------------------------------------------------------------------------*/
-/*********************************************************************************************************//**
-  * @brief  Main program.
-  * @retval None
-  * @details Main program as following
-  *  - Enable peripheral clock of AFIO, USART0.
-  *  - Config AFIO mode as USART0_Rx and USART0_Tx function.
-  *  - USART0 configuration:
-  *     - BaudRate = 115200 baud
-  *     - Word Length = 8 Bits
-  *     - One Stop Bit
-  *     - None parity bit
-  *  - USART0 Tx "Hello World!" string 10 times.
-  *  - USART0 Rx character and transform to hex.(Loop)
-  *
-  ***********************************************************************************************************/
 int main(void)
 {
-  USART_InitTypeDef USART_InitStructure;
-  int input = 0;
-  /* Enable peripheral clock of AFIO, USART0                                                                */
+	USART_InitTypeDef USART_InitStructure;
 
-  CKCUClock.Bit.AFIO   = 1;
-  COM1_CLK(CKCUClock)  = 1;
-  CKCU_PeripClockConfig(CKCUClock, ENABLE);
-  
-  /* Config AFIO mode as USART0_Rx and USART0_Tx function.                                                  */
-  AFIO_GPxConfig(COM1_TX_GPIO_ID, COM1_TX_AFIO_PIN, AFIO_FUN_USART_UART);
-  AFIO_GPxConfig(COM1_RX_GPIO_ID, COM1_RX_AFIO_PIN, AFIO_FUN_USART_UART);
+	CKCUClock.Bit.AFIO   = 1;
+	COM1_CLK(CKCUClock)  = 1;
+	CKCU_PeripClockConfig(CKCUClock, ENABLE);
+	
+	/* Config AFIO mode as USART0_Rx and USART0_Tx function.                                                  */
+	AFIO_GPxConfig(COM1_TX_GPIO_ID, COM1_TX_AFIO_PIN, AFIO_FUN_USART_UART);
+	AFIO_GPxConfig(COM1_RX_GPIO_ID, COM1_RX_AFIO_PIN, AFIO_FUN_USART_UART);
 
-  /* USART0 configuration ----------------------------------------------------------------------------------*/
-  /* USART0 configured as follow:
-        - BaudRate = 115200 baud
-        - Word Length = 8 Bits
-        - One Stop Bit
-        - None parity bit
-  */
-  USART_InitStructure.USART_BaudRate = 9600;
-  USART_InitStructure.USART_WordLength = USART_WORDLENGTH_8B;
-  USART_InitStructure.USART_StopBits = USART_STOPBITS_1;
-  USART_InitStructure.USART_Parity = USART_PARITY_NO;
-  USART_InitStructure.USART_Mode = USART_MODE_NORMAL;
+	/* USART0 configuration ----------------------------------------------------------------------------------*/
+	/* USART0 configured as follow:
+			- BaudRate = 115200 baud
+			- Word Length = 8 Bits
+			- One Stop Bit
+			- None parity bit
+	*/
+	USART_InitStructure.USART_BaudRate = 9600;
+	USART_InitStructure.USART_WordLength = USART_WORDLENGTH_8B;
+	USART_InitStructure.USART_StopBits = USART_STOPBITS_1;
+	USART_InitStructure.USART_Parity = USART_PARITY_NO;
+	USART_InitStructure.USART_Mode = USART_MODE_NORMAL;
 
-  USART_Init(COM1_PORT, &USART_InitStructure);
-  USART_TxCmd(COM1_PORT, ENABLE);
-  USART_RxCmd(COM1_PORT, ENABLE);
+	USART_Init(COM1_PORT, &USART_InitStructure);
 
+	/* Seting COM1_PORT interrupt-flag                                                                        */
+	USART_IntConfig(COM1_PORT, USART_INT_RXDR, ENABLE);
+	
+	USART_TxCmd(COM1_PORT, ENABLE);
+	USART_RxCmd(COM1_PORT, ENABLE);
+
+	// set GPIOpin:LED2
 	HTCFG_OUTPUT_LED2_CLK(CKCUClock) = 1;
 	CKCU_PeripClockConfig(CKCUClock, ENABLE);
 	GPIO_DirectionConfig(HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, GPIO_DIR_OUT);
 	GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, RESET );
-  /* USART0 Rx character and transform to hex.(Loop)                                                        */
-  while (1)
-  {
-		//delayms(100);
-		read_dht11_dat();
-		//delayms(2);
-		/*printf("ENTER FIRST PRIME NUMBER\n");
-		p = 7;
-		printf("ENTER ANOTHER PRIME NUMBER\n");
-		q = 11;
-		for (i=0; msg[i] != '\0'; i++)
-			m[i]=msg[i];
 
-		n=p*q;
-		t=(p-1)*(q-1);
-		ce();
-		encrypt();
-		decrypt();*/
-  }
+	// Rx example code
+	/* COM1 Tx                                                                                                 */
+	//URTxWriteIndex = sizeof(HelloString);
+	//memcpy(URTxBuf, HelloString, sizeof(HelloString));
+	//USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+	/* URx Tx > URx Rx
+	COM1 Rx > COM1 Rx interrupt mode                                                                          */
+	//while (1)
+	//{
+		/* COM1 Rx.waiting for receive the fifth data,
+		then move date from UR1RxBuf to UR1TxBuf.                                                               */
+		//if (URRxWriteIndex >= 5)
+		//{
+		//memcpy(URTxBuf, URRxBuf, 5);
+		//URRxWriteIndex = 0;
+		/* COM1 Tx                                                                                             */
+		//URTxWriteIndex = 5;
+		//USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+		//}
+	//}
+
+	/* USART0 Rx character and transform to hex.(Loop)                                                        */
+	while (1)
+	{
+			read_dht11_dat();
+	}
 }
 
 #if (HT32_LIB_DEBUG == 1)
