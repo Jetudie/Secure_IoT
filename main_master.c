@@ -9,17 +9,27 @@
 #include "lorenz.h"
 #define MAXTIMINGS	85
 
-void ControlFan(int, int);
+bool GetRequest();
+void SendSync(Master*);
+bool CheckOK();
+int Encrypt(Master*, Temp, Hum);
+void SendCiphertext();
 void GetDHT11Data(int*, int*);
 void delayms(int);
 void delayus(int);
 
+struct DHT_Data{
+	int Temp;
+	int Hum;
+};
 
 int main(void)
 {
-	int Temp = 0;
-	int Hum = 0;
-	
+	int Req;
+	int Key;
+	struct DHT_Data Data = {0, 0};
+	Master *master;
+
 	CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
 	USART_InitTypeDef USART_InitStructure;
 
@@ -84,15 +94,49 @@ int main(void)
 	/* USART0 Rx character and transform to hex.(Loop)                                                        */
 	while (1)
 	{
+		Req = GetRequest();
+		if(Req == 1)
+			SendSync(master);
+		else if(Req == 2)
+			Key = master->x1m;
+
+		if(CheckOK()){
+			GetDHT11Data(&Data);
+			SendCiphertext(Encrypt(Key, &Data));
+		}
 	}
 }
 
-void ControlFan(int Temp, int Hum){
-	if(Hum >= 50)
-		GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, SET );
-	else
-		GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, RESET );
+bool GetRequest(){
+	// Use UART to check request
+	char str[7];
+
+	// if gets request, return 1
+	if(URRxWriteIndex >= 6){
+		memcpy(str, URRxBuf, 6);
+		str[6] = '\0';
+		if(strcmp(str, "Req:01") != NULL)
+			return 1;
+		if(strcmp(str, "Sync01") != NULL)
+			return 2;
+		return 0;
+	}
+	return 0;
 }
+
+void SendSync(Master* master){
+	char x[12];
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, DISABLE);
+	memcpy(x, master->x1m, sizeof(x1));
+	memcpy(x+4, master->x2m, sizeof(x2));
+	memcpy(x+8, master->x3m, sizeof(x3));
+	memcpy(URTxBuf, x, 12);
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+}
+
+bool CheckOK();
+void Encrypt(Master*);
+void SendCiphertext();
 
 // Source: http://www.uugear.com/portfolio/dht11-humidity-temperature-sensor-module/?fbclid=IwAR01i0nRi2Ima3vOjKyExAJkNNBw7shnxLS7Aq6wSucu_ExnubCZfM0ZNv4
 void GetDHT11Data(int *Temp, int *Hum)

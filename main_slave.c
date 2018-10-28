@@ -9,8 +9,12 @@
 #include "lorenz.h"
 #define MAXTIMINGS	85
 
+
+void CheckOK();
 void ControlFan(int, int);
-void GetDHT11Data(int*, int*);
+void Decrypt(Slave*);
+void CheckforSync();
+void OutputLCD();
 void delayms(int);
 void delayus(int);
 
