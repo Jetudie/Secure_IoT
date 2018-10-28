@@ -9,23 +9,33 @@
 #include "lorenz.h"
 #define MAXTIMINGS	85
 
+typedef struct DHT_Data{
+	int Temp;
+	int Hum;
+}DHT_Data;
 
-void CheckOK();
-void ControlFan(int, int);
-void Decrypt(Slave*);
-void CheckforSync();
-void OutputLCD();
+void SendRequest(void);
+int GetSync(Slave*);
+void SendOK(void);
+void CreateKey(void*, void*);
+DHT_Data GetCipherText(void);
+DHT_Data Decrypt(int ,DHT_Data);
+//void OutputLCD(DHT_Data);
+void ControlFan(DHT_Data);
 void delayms(int);
 void delayus(int);
 
-
 int main(void)
 {
-	int Temp = 0;
-	int Hum = 0;
-	
+	int sync = 0;
+	int Key;
+	int OK = 0;
+	DHT_Data Data = {0, 0};
+	Slave *slave;
+
 	CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
 	USART_InitTypeDef USART_InitStructure;
+	init_slave(&slave);
 
 	/* Enable peripheral clock of AFIO, USART0                                                                */
 	CKCUClock.Bit.AFIO   = 1;
@@ -88,83 +98,83 @@ int main(void)
 	/* USART0 Rx character and transform to hex.(Loop)                                                        */
 	while (1)
 	{
+		if(!OK){ // if not synchronized
+			SendRequest();
+			sync = GetSync(slave);
+			if(sync){
+				SendOK();
+				CreateKey(&Key, &slave->x1s);
+				OK = 1;
+			}
+		}
+		else{ // if synchronized
+			Data = Decrypt(Key, GetCipherText());
+			ControlFan(Data);
+			//OutputLCD(Data);
+		}
 	}
 }
 
-void ControlFan(int Temp, int Hum){
-	if(Hum >= 50)
+void SendRequest()
+{
+	printf("Req:01");
+}
+
+int GetSync(Slave* slave)
+{
+	int n[3];
+	scanf("%d%d%d", &n[0], &n[1], &n[2]);
+	slave->sync(slave, n);
+	if(slave->e1 < 0.00002)
+		return 1;
+	else
+		return 0;
+}
+
+void SendOK()
+{
+	printf("Sync01");
+}
+
+void CreateKey(void* key, void* n)
+{
+	memcpy(key, n, 4);
+}
+
+DHT_Data GetCipherText()
+{
+	DHT_Data data;
+	scanf("%d%d", &data.Temp, &data.Hum);
+	return data;
+}
+DHT_Data Decrypt(int key ,DHT_Data data)
+{
+	int mask = 0x07f80000;
+	data.Temp ^= key & mask >> 16;
+	data.Hum ^= key & mask >> 16;
+	return data;
+}
+void OutputLCD(DHT_Data);
+
+/* Use LED2 GPIO to control fan */
+void ControlFan(DHT_Data Data)
+{
+	if(Data.Hum >= 50)
 		GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, SET );
 	else
 		GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, RESET );
 }
 
-// Source: http://www.uugear.com/portfolio/dht11-humidity-temperature-sensor-module/?fbclid=IwAR01i0nRi2Ima3vOjKyExAJkNNBw7shnxLS7Aq6wSucu_ExnubCZfM0ZNv4
-void GetDHT11Data(int *Temp, int *Hum)
+void delayms(int n_ms)
 {
-	uint8_t laststate = SET;
-	uint8_t counter	= 0;
-	uint8_t j = 0, i ;
-	float f; /* fahrenheit */
-	int dht11_dat[5] = { 0, 0, 0, 0, 0 };
-	
-	/* pull pin down for 18 milliseconds */
-	GPIO_DirectionConfig(HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, GPIO_DIR_OUT);
-	GPIO_WriteOutBits( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, RESET );
-	delayms( 18 );
-	/* then pull it up for 40 microseconds */
-	GPIO_WriteOutBits( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, SET );
-	delayus( 40 ); 
-	/* prepare to read the pin */
-	GPIO_DirectionConfig(HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, GPIO_DIR_IN);
-	GPIO_ReadInBit( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN );
-	GPIO_InputConfig( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN, ENABLE);
-		
-	/* detect change and read data */
-	for ( i = 0; i < MAXTIMINGS; i++ )
-	{
-		counter = 0;
-		while ( GPIO_ReadInBit( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN ) == laststate )
-		{
-			counter++;
-			delayus( 1 );
-			if ( counter == 255 )
-			{
-				break;
-			}
-		}
-		laststate = GPIO_ReadInBit( HTCFG_LED1, HTCFG_OUTPUT_LED1_GPIO_PIN );
-		if ( counter == 255 )
-			break;
-		/* ignore first 3 transitions */
-		if ( (i >= 4) && (i % 2 == 0) )  
-		{
-			/* shove each bit into the storage bytes */
-			dht11_dat[j / 8] <<= 1;
-			if ( counter > 16 )   //16
-				dht11_dat[j / 8] |= 1;
-			j++;
-		}
-	}
-
-	/*
-	 * check we read 40 bits (8bit x 5 ) + verify checksum in the last byte
-	 * print it out if data is good
-	 */
-	if ((j >= 40)&&(dht11_dat[4] == ( (dht11_dat[0] + dht11_dat[1] + dht11_dat[2] + dht11_dat[3]) & 0xFF) ) )
-	{
-		*Temp = dht11[2];
-		*Hum = dht11[0];
-	}
-}
-
-void delayms(int n_ms){
 	int i = 0, j = 0;
 	for(i= 0; i < n_ms;i++)
 		for(j= 0; j<13000;j++)
 			;
 }
 
-void delayus(int n_us){
+void delayus(int n_us)
+{
 	int i = 0, j = 0;
 	for(i= 0; i < n_us;i++)
 		for(j= 0; j<13;j++)

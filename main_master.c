@@ -9,29 +9,32 @@
 #include "lorenz.h"
 #define MAXTIMINGS	85
 
-bool GetRequest();
+typedef struct DHT_Data{
+	int Temp;
+	int Hum;
+}DHT_Data;
+
+int GetRequest(void);
 void SendSync(Master*);
-bool CheckOK();
-int Encrypt(Master*, Temp, Hum);
-void SendCiphertext();
-void GetDHT11Data(int*, int*);
+void CreateKey(void*, void*);
+DHT_Data Encrypt(int, DHT_Data);
+void SendCiphertext(DHT_Data);
+void GetDHT11Data(DHT_Data*);
 void delayms(int);
 void delayus(int);
 
-struct DHT_Data{
-	int Temp;
-	int Hum;
-};
 
 int main(void)
 {
 	int Req;
 	int Key;
-	struct DHT_Data Data = {0, 0};
+	int OK = 0;
+	DHT_Data Data = {0, 0};
 	Master *master;
 
 	CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
 	USART_InitTypeDef USART_InitStructure;
+	init_master(&master);
 
 	/* Enable peripheral clock of AFIO, USART0                                                                */
 	CKCUClock.Bit.AFIO   = 1;
@@ -94,21 +97,25 @@ int main(void)
 	/* USART0 Rx character and transform to hex.(Loop)                                                        */
 	while (1)
 	{
-		Req = GetRequest();
-		if(Req == 1)
-			SendSync(master);
-		else if(Req == 2)
-			Key = master->x1m;
-
-		if(CheckOK()){
+		if(!OK){ // if not synchronized
+			Req = GetRequest();
+			if(Req == 1) // if get request for synchronizing
+				SendSync(master);
+			else if(Req == 2){ // if get ack for synchronizing finished
+				CreateKey(&Key, &master->x1m);
+				OK = 1;
+			}
+		}
+		else{ // if synchronized
 			GetDHT11Data(&Data);
-			SendCiphertext(Encrypt(Key, &Data));
+			SendCiphertext(Encrypt(Key, Data));
 		}
 	}
 }
 
-bool GetRequest(){
-	// Use UART to check request
+/* Use UART to check for request */
+int GetRequest(void)
+{
 	char str[7];
 
 	// if gets request, return 1
@@ -124,27 +131,50 @@ bool GetRequest(){
 	return 0;
 }
 
-void SendSync(Master* master){
+/* Send x1m, x2m, x3m from Master */
+void SendSync(Master* master)
+{
 	char x[12];
+	master->sync(master);
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, DISABLE);
-	memcpy(x, master->x1m, sizeof(x1));
-	memcpy(x+4, master->x2m, sizeof(x2));
-	memcpy(x+8, master->x3m, sizeof(x3));
+	memcpy(x, &master->x1m, 4);
+	memcpy(x+4, &master->x2m, 4);
+	memcpy(x+8, &master->x3m, 4);
 	memcpy(URTxBuf, x, 12);
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
 }
 
-bool CheckOK();
-void Encrypt(Master*);
-void SendCiphertext();
+void CreateKey(void* key, void* n)
+{
+	memcpy(key, n, 4);
+}
+
+/* Use Master's x1m to encrypt data through xor */
+DHT_Data Encrypt(int key, DHT_Data data)
+{
+	int mask = 0x07f80000;
+	data.Temp ^= key & mask >> 16;
+	data.Hum ^= key & mask >> 16;
+	return data;
+}
+
+/* Send encrypted temp, hum through UART */
+void SendCiphertext(DHT_Data data)
+{
+	char x[8];
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, DISABLE);
+	memcpy(x, &data.Temp, 4);
+	memcpy(x+4, &data.Hum, 4);
+	memcpy(URTxBuf, x, 8);
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+}
 
 // Source: http://www.uugear.com/portfolio/dht11-humidity-temperature-sensor-module/?fbclid=IwAR01i0nRi2Ima3vOjKyExAJkNNBw7shnxLS7Aq6wSucu_ExnubCZfM0ZNv4
-void GetDHT11Data(int *Temp, int *Hum)
+void GetDHT11Data(DHT_Data *Data)
 {
 	uint8_t laststate = SET;
 	uint8_t counter	= 0;
 	uint8_t j = 0, i ;
-	float f; /* fahrenheit */
 	int dht11_dat[5] = { 0, 0, 0, 0, 0 };
 	
 	/* pull pin down for 18 milliseconds */
@@ -192,19 +222,21 @@ void GetDHT11Data(int *Temp, int *Hum)
 	 */
 	if ((j >= 40)&&(dht11_dat[4] == ( (dht11_dat[0] + dht11_dat[1] + dht11_dat[2] + dht11_dat[3]) & 0xFF) ) )
 	{
-		*Temp = dht11[2];
-		*Hum = dht11[0];
+		Data->Temp = dht11_dat[2];
+		Data->Hum = dht11_dat[0];
 	}
 }
 
-void delayms(int n_ms){
+void delayms(int n_ms)
+{
 	int i = 0, j = 0;
 	for(i= 0; i < n_ms;i++)
 		for(j= 0; j<13000;j++)
 			;
 }
 
-void delayus(int n_us){
+void delayus(int n_us)
+{
 	int i = 0, j = 0;
 	for(i= 0; i < n_us;i++)
 		for(j= 0; j<13;j++)
