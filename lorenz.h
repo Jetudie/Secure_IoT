@@ -14,11 +14,13 @@ static int SyncLorenzMaster(Master *);
 static int SyncLorenzSlave(Slave *, void *);
 
 struct master{
-    int confirm;
 	float xm_init[3];
     float x1m;
     float x2m;
     float x3m;
+    float um;
+    float alpha;
+    int c;
     func_master sync;
 };
 
@@ -29,9 +31,8 @@ struct slave{
     float e1;
     float e2;
     float e3;
-	float f;
 	float u;
-    float s;
+    float us;
     float alpha;
     int c;
     func_slave sync;

@@ -19,6 +19,7 @@ void SendSync(Master*);
 void CreateKey(void*, void*);
 DHT_Data Encrypt(int, DHT_Data);
 void SendCiphertext(DHT_Data);
+void SendCiphertext_toESP(DHT_Data);
 void GetDHT11Data(DHT_Data*);
 void delayms(int);
 void delayus(int);
@@ -76,7 +77,7 @@ int main(void)
 	USART_RxCmd(COM2_PORT, ENABLE);
 	/* Configure USART0 & USART1 interrupt                                                                    */
 	NVIC_EnableIRQ(COM1_IRQn);
-	//NVIC_EnableIRQ(COM2_IRQn);
+	NVIC_EnableIRQ(COM2_IRQn);
 	
 	// Set GPIOpin 
 	// LED1 for DHT11
@@ -102,6 +103,7 @@ int main(void)
 		else{ // if synchronized
 			GetDHT11Data(&Data);
 			SendCiphertext(Encrypt(Key, Data));
+			SendCiphertext_toESP(Encrypt(Key, Data));
 		}
 	}
 }
@@ -127,14 +129,11 @@ int GetRequest(void)
 /* Send x1m, x2m, x3m from Master */
 void SendSync(Master* master)
 {
-	char x[12];
 	master->sync(master);
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, DISABLE);
-	memcpy(x, &master->x1m, 4);
-	memcpy(x+4, &master->x2m, 4);
-	memcpy(x+8, &master->x3m, 4);
-	memcpy(URTxBuf, x, 12);
-	URTxWriteIndex = 12;	
+	memcpy(URTxBuf, &master->um, 4);
+	memcpy(URTxBuf+4, &master->x2m, 4);
+	URTxWriteIndex = 8;	
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
 }
 
@@ -156,10 +155,20 @@ DHT_Data Encrypt(int key, DHT_Data data)
 void SendCiphertext(DHT_Data data)
 {
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, DISABLE);
-	memcpy(URRxBuf, &data.Temp, 4);
+	memcpy(URTxBuf, &data.Temp, 4);
 	memcpy(URTxBuf+4, &data.Hum, 4);
 	URTxWriteIndex = 8;	
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+}
+
+/* Send encrypted temp, hum through UART to ESP8266 */
+void SendCiphertext_toESP (DHT_Data data)
+{
+	USART_IntConfig(COM2_PORT, USART_INT_TXDE, DISABLE);
+	memcpy(URTxBuf2, &data.Temp, 4);
+	memcpy(URTxBuf2+4, &data.Hum, 4);
+	URTxWriteIndex = 8;	
+	USART_IntConfig(COM2_PORT, USART_INT_TXDE, ENABLE);
 }
 
 // Source: http://www.uugear.com/portfolio/dht11-humidity-temperature-sensor-module/?fbclid=IwAR01i0nRi2Ima3vOjKyExAJkNNBw7shnxLS7Aq6wSucu_ExnubCZfM0ZNv4

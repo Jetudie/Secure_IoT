@@ -36,36 +36,49 @@ int main(void)
 	CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
 	USART_InitTypeDef USART_InitStructure;
 	init_slave(&slave);
-
+	HT32F_DVB_LEDInit(HT_LED1);
+	HT32F_DVB_LEDInit(HT_LED2);
 	/* Enable peripheral clock of AFIO, USART0                                                                */
 	CKCUClock.Bit.AFIO   = 1;
 	COM1_CLK(CKCUClock)  = 1;
+	COM2_CLK(CKCUClock)  = 1;
 	CKCU_PeripClockConfig(CKCUClock, ENABLE);
 
 	/* Config AFIO mode as USART0_Rx and USART0_Tx function.                                                  */
 	AFIO_GPxConfig(COM1_TX_GPIO_ID, COM1_TX_AFIO_PIN, AFIO_FUN_USART_UART);
 	AFIO_GPxConfig(COM1_RX_GPIO_ID, COM1_RX_AFIO_PIN, AFIO_FUN_USART_UART);
+	AFIO_GPxConfig(COM2_TX_GPIO_ID, COM2_TX_AFIO_PIN, AFIO_FUN_USART_UART);
+	AFIO_GPxConfig(COM2_RX_GPIO_ID, COM2_RX_AFIO_PIN, AFIO_FUN_USART_UART);
 
-	/* USART0 configuration ----------------------------------------------------------------------------------*/
-	/* USART0 configured as follow:
+	/* USART configuration ----------------------------------------------------------------------------------*/
+	/* USART configured as follow:
 			- BaudRate = 115200 baud
 			- Word Length = 8 Bits
 			- One Stop Bit
 			- None parity bit
 	*/
-	USART_InitStructure.USART_BaudRate = 9600;
+	USART_InitStructure.USART_BaudRate = 115200;
 	USART_InitStructure.USART_WordLength = USART_WORDLENGTH_8B;
 	USART_InitStructure.USART_StopBits = USART_STOPBITS_1;
 	USART_InitStructure.USART_Parity = USART_PARITY_NO;
 	USART_InitStructure.USART_Mode = USART_MODE_NORMAL;
 	USART_Init(COM1_PORT, &USART_InitStructure);
-
-	/* Set COM1_PORT interrupt-flag                                                                        */
+	USART_Init(COM2_PORT, &USART_InitStructure);
+	
+	/* Set COM1_PORT, COM2_PORT interrupt-flag                                                                        */
+	// COM1: USART1, A4, A5 for Master
+	// COM2: USART0, A2, A3 for Testing
 	USART_IntConfig(COM1_PORT, USART_INT_RXDR, ENABLE);
+	USART_IntConfig(COM2_PORT, USART_INT_RXDR, ENABLE);
 	
 	USART_TxCmd(COM1_PORT, ENABLE);
 	USART_RxCmd(COM1_PORT, ENABLE);
-
+	USART_TxCmd(COM2_PORT, ENABLE);
+	USART_RxCmd(COM2_PORT, ENABLE);
+	/* Configure USART0 & USART1 interrupt                                                                    */
+	NVIC_EnableIRQ(COM1_IRQn);
+	//NVIC_EnableIRQ(COM2_IRQn);
+	
 	// Set GPIOpin 
 	// LED1 for DHT11
 	// LED2 for Fan Control
@@ -74,26 +87,6 @@ int main(void)
 	GPIO_DirectionConfig(HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, GPIO_DIR_OUT);
 	GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, RESET );
 
-	// Rx example code
-	/* COM1 Tx                                                                                                 */
-	//URTxWriteIndex = sizeof(HelloString);
-	//memcpy(URTxBuf, HelloString, sizeof(HelloString));
-	//USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
-	/* URx Tx > URx Rx
-	COM1 Rx > COM1 Rx interrupt mode                                                                          */
-	//while (1)
-	//{
-		/* COM1 Rx.waiting for receive the fifth data,
-		then move date from UR1RxBuf to UR1TxBuf.                                                               */
-		//if (URRxWriteIndex >= 5)
-		//{
-		//memcpy(URTxBuf, URRxBuf, 5);
-		//URRxWriteIndex = 0;
-		/* COM1 Tx                                                                                             */
-		//URTxWriteIndex = 5;
-		//USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
-		//}
-	//}
 
 	/* USART0 Rx character and transform to hex.(Loop)                                                        */
 	while (1)
@@ -117,15 +110,23 @@ int main(void)
 
 void SendRequest()
 {
-	printf("Req:01");
+	int msg = 0x12345678;
+	memcpy(URTxBuf, &msg, 4);
+	URTxWriteIndex = 4;
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+	delayms(1000);
 }
 
 int GetSync(Slave* slave)
 {
-	int n[3];
-	scanf("%d%d%d", &n[0], &n[1], &n[2]);
+	int n[2];
+
+	// Get um and x2m from UART buffer
+	memcpy(n, URRxBuf, 8);
+	URRxWriteIndex = 0;
+	
 	slave->sync(slave, n);
-	if(slave->e1 < 0.00002)
+	if(slave->e2 < 0.000002)
 		return 1;
 	else
 		return 0;
@@ -133,7 +134,12 @@ int GetSync(Slave* slave)
 
 void SendOK()
 {
-	printf("Sync01");
+	int msg = 0x9ABCDEF0;
+
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, DISABLE);
+	memcpy(URTxBuf, &msg, 4);
+	URTxWriteIndex = 4;
+	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
 }
 
 void CreateKey(void* key, void* n)
@@ -144,14 +150,16 @@ void CreateKey(void* key, void* n)
 DHT_Data GetCipherText()
 {
 	DHT_Data data;
-	scanf("%d%d", &data.Temp, &data.Hum);
+	memcpy(&data.Temp, URRxBuf, 4);
+	memcpy(&data.Hum, URRxBuf+4, 4);
+	URRxWriteIndex = 0;	
 	return data;
 }
 DHT_Data Decrypt(int key ,DHT_Data data)
 {
 	int mask = 0x07f80000;
-	data.Temp ^= key & mask >> 16;
-	data.Hum ^= key & mask >> 16;
+	data.Temp ^= (key & mask) >> 16;
+	data.Hum ^= (key & mask) >> 16;
 	return data;
 }
 void OutputLCD(DHT_Data);
