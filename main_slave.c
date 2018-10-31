@@ -24,6 +24,7 @@ DHT_Data Decrypt(int ,DHT_Data);
 void ControlFan(DHT_Data);
 void delayms(int);
 void delayus(int);
+void SendData(DHT_Data*);
 
 int main(void)
 {
@@ -77,7 +78,7 @@ int main(void)
 	USART_RxCmd(COM2_PORT, ENABLE);
 	/* Configure USART0 & USART1 interrupt                                                                    */
 	NVIC_EnableIRQ(COM1_IRQn);
-	//NVIC_EnableIRQ(COM2_IRQn);
+	NVIC_EnableIRQ(COM2_IRQn);
 	
 	// Set GPIOpin 
 	// LED1 for DHT11
@@ -86,7 +87,6 @@ int main(void)
 	HTCFG_OUTPUT_LED2_CLK(CKCUClock) = 1;
 	GPIO_DirectionConfig(HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, GPIO_DIR_OUT);
 	GPIO_WriteOutBits( HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, RESET );
-
 
 	/* USART0 Rx character and transform to hex.(Loop)                                                        */
 	while (1)
@@ -103,6 +103,7 @@ int main(void)
 		else{ // if synchronized
 			Data = Decrypt(Key, GetCipherText());
 			ControlFan(Data);
+			SendData(&Data);
 			//OutputLCD(Data);
 		}
 	}
@@ -122,11 +123,14 @@ int GetSync(Slave* slave)
 	int n[2];
 
 	// Get um and x2m from UART buffer
-	memcpy(n, URRxBuf, 8);
-	URRxWriteIndex = 0;
+	if(URRxWriteIndex >= 8){
+		memcpy(n, URRxBuf, 8);
+		URRxWriteIndex -= 8;
+		slave->sync(slave, n);
+	}	
 	
 	slave->sync(slave, n);
-	if(slave->e2 < 0.000002)
+	if(slave->e2 > -0.000002 && slave->e2 < 0.000002 )
 		return 1;
 	else
 		return 0;
@@ -150,9 +154,11 @@ void CreateKey(void* key, void* n)
 DHT_Data GetCipherText()
 {
 	DHT_Data data;
-	memcpy(&data.Temp, URRxBuf, 4);
-	memcpy(&data.Hum, URRxBuf+4, 4);
-	URRxWriteIndex = 0;	
+	if(URRxWriteIndex >= 8){
+		memcpy(&data.Temp, URRxBuf, 4);
+		memcpy(&data.Hum, URRxBuf+4, 4);
+		URRxWriteIndex -= 8;	
+	}
 	return data;
 }
 DHT_Data Decrypt(int key ,DHT_Data data)
@@ -187,6 +193,14 @@ void delayus(int n_us)
 	for(i= 0; i < n_us;i++)
 		for(j= 0; j<13;j++)
 			;
+}
+
+void SendData(DHT_Data* data){
+	USART_IntConfig(COM2_PORT, USART_INT_TXDE, DISABLE);
+	memcpy(URTxBuf2, &data->Temp, 4);
+	memcpy(URTxBuf2+4, &data->Hum, 4);
+	URTxWriteIndex2 = 8;
+	USART_IntConfig(COM2_PORT, USART_INT_TXDE, ENABLE);
 }
 
 #if (HT32_LIB_DEBUG == 1)

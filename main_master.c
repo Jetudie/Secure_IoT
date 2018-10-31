@@ -116,7 +116,7 @@ int GetRequest(void)
 	// if gets request, return 1
 	if(URRxWriteIndex >= 4){
 		memcpy(&x, URRxBuf, 4);
-		URRxWriteIndex = 0;
+		URRxWriteIndex -= 4;
 		if(x == 0x12345678)
 			return 1;
 		if(x == 0x9ABCDEF0)
@@ -167,7 +167,7 @@ void SendCiphertext_toESP (DHT_Data data)
 	USART_IntConfig(COM2_PORT, USART_INT_TXDE, DISABLE);
 	memcpy(URTxBuf2, &data.Temp, 4);
 	memcpy(URTxBuf2+4, &data.Hum, 4);
-	URTxWriteIndex = 8;	
+	URTxWriteIndex2 = 8;	
 	USART_IntConfig(COM2_PORT, USART_INT_TXDE, ENABLE);
 }
 
