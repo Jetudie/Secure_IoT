@@ -36,8 +36,8 @@ int main(void)
 	CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
 	USART_InitTypeDef USART_InitStructure;
 	init_master(&master);
-  HT32F_DVB_LEDInit(HT_LED1);
-  HT32F_DVB_LEDInit(HT_LED2);
+  	HT32F_DVB_LEDInit(HT_LED1);
+  	HT32F_DVB_LEDInit(HT_LED2);
 	/* Enable peripheral clock of AFIO, USART0                                                                */
 	CKCUClock.Bit.AFIO   = 1;
 	COM1_CLK(CKCUClock)  = 1;

@@ -8,6 +8,9 @@
 #include "usart_int.h" // for Rx interrupt
 #include "lorenz.h"
 #define MAXTIMINGS	85
+#define SYNC_DONE 0
+#define ONE_MORE 1
+#define SKIP_REQUEST 2
 
 typedef struct DHT_Data{
 	int Temp;
@@ -28,9 +31,8 @@ void SendData(DHT_Data*);
 
 int main(void)
 {
-	int sync = 0;
+	int Sync = ONE_MORE;
 	int Key;
-	int OK = 0;
 	DHT_Data Data = {0, 0};
 	Slave *slave;
 
@@ -91,16 +93,14 @@ int main(void)
 	/* USART0 Rx character and transform to hex.(Loop)                                                        */
 	while (1)
 	{
-		if(!OK){ // if not synchronized
-			SendRequest();
-			sync = GetSync(slave);
-			if(sync){
-				SendOK();
-				CreateKey(&Key, &slave->x1s);
-				OK = 1;
-			}
+		if(Sync != SYNC_DONE){ // if not synchronized
+			if(Sync == ONE_MORE)
+				SendRequest();
+			Sync = GetSync(slave);
 		}
 		else{ // if synchronized
+			SendOK();
+			CreateKey(&Key, &slave->x1s);
 			Data = Decrypt(Key, GetCipherText());
 			ControlFan(Data);
 			SendData(&Data);
@@ -127,13 +127,14 @@ int GetSync(Slave* slave)
 		memcpy(n, URRxBuf, 8);
 		URRxWriteIndex -= 8;
 		slave->sync(slave, n);
-	}	
-	
-	slave->sync(slave, n);
-	if(slave->e2 > -0.000002 && slave->e2 < 0.000002 )
-		return 1;
-	else
-		return 0;
+		// Return 1 if OK(converge)
+		// else return 2 (asking for one more)
+		if(slave->e2 > -0.000002 && slave->e2 < 0.000002 )
+			return SYNC_DONE;
+		else
+			return ONE_MORE;
+	}
+	return SKIP_REQUEST;
 }
 
 void SendOK()
