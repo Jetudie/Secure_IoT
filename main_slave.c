@@ -94,13 +94,14 @@ int main(void)
 	while (1)
 	{
 		if(Sync != SYNC_DONE){ // if not synchronized
-			if(Sync == ONE_MORE)
-				SendRequest();
+			SendRequest();
 			Sync = GetSync(slave);
+			if(Sync == SYNC_DONE){
+				SendOK();
+				CreateKey(&Key, &slave->x1s);
+			}
 		}
 		else{ // if synchronized
-			SendOK();
-			CreateKey(&Key, &slave->x1s);
 			Data = Decrypt(Key, GetCipherText());
 			ControlFan(Data);
 			SendData(&Data);
@@ -115,7 +116,7 @@ void SendRequest()
 	memcpy(URTxBuf, &msg, 4);
 	URTxWriteIndex = 4;
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
-	delayms(1000);
+	delayms(1);
 }
 
 int GetSync(Slave* slave)
@@ -123,18 +124,17 @@ int GetSync(Slave* slave)
 	int n[2];
 
 	// Get um and x2m from UART buffer
-	if(URRxWriteIndex >= 8){
-		memcpy(n, URRxBuf, 8);
-		URRxWriteIndex -= 8;
-		slave->sync(slave, n);
-		// Return 1 if OK(converge)
-		// else return 2 (asking for one more)
-		if(slave->e2 > -0.000002 && slave->e2 < 0.000002 )
-			return SYNC_DONE;
-		else
-			return ONE_MORE;
-	}
-	return SKIP_REQUEST;
+	while(URRxWriteIndex < 8)
+		;
+	memcpy(n, URRxBuf, 8);
+	URRxWriteIndex = 0;
+	slave->sync(slave, n);
+	// Return 1 if OK(converge)
+	// else return 2 (asking for one more)
+	if(slave->e2 > -0.000002 && slave->e2 < 0.000002 )
+		return SYNC_DONE;
+	else
+		return ONE_MORE;
 }
 
 void SendOK()
@@ -145,6 +145,7 @@ void SendOK()
 	memcpy(URTxBuf, &msg, 4);
 	URTxWriteIndex = 4;
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+	delayms(1);
 }
 
 void CreateKey(void* key, void* n)
@@ -155,11 +156,12 @@ void CreateKey(void* key, void* n)
 DHT_Data GetCipherText()
 {
 	DHT_Data data;
-	if(URRxWriteIndex >= 8){
-		memcpy(&data.Temp, URRxBuf, 4);
-		memcpy(&data.Hum, URRxBuf+4, 4);
-		URRxWriteIndex -= 8;	
-	}
+	while(URRxWriteIndex < 8)
+		;
+	memcpy(&data.Temp, URRxBuf, 4);
+	memcpy(&data.Hum, URRxBuf+4, 4);
+	URRxWriteIndex = 0;	
+	
 	return data;
 }
 DHT_Data Decrypt(int key ,DHT_Data data)

@@ -69,7 +69,7 @@ int main(void)
 	// COM1: USART1, A4, A5 for Slave
 	// COM2: USART0, A2, A3 for ESP
 	USART_IntConfig(COM1_PORT, USART_INT_RXDR, ENABLE);
-	//USART_IntConfig(COM2_PORT, USART_INT_RXDR, ENABLE);
+	USART_IntConfig(COM2_PORT, USART_INT_RXDR, ENABLE);
 	
 	USART_TxCmd(COM1_PORT, ENABLE);
 	USART_RxCmd(COM1_PORT, ENABLE);
@@ -114,15 +114,14 @@ int GetRequest(void)
 	int x; // 0x12345678
 
 	// if gets request, return 1
-	if(URRxWriteIndex >= 4){
-		memcpy(&x, URRxBuf, 4);
-		URRxWriteIndex -= 4;
-		if(x == 0x12345678)
-			return 1;
-		if(x == 0x9ABCDEF0)
-			return 2;
-		return 0;
-	}
+	while(URRxWriteIndex < 4)
+		;
+	memcpy(&x, URRxBuf, 4);
+	URRxWriteIndex = 0;
+	if(x == 0x12345678)
+		return 1;
+	if(x == 0x9ABCDEF0)
+		return 2;
 	return 0;
 }
 
@@ -135,6 +134,7 @@ void SendSync(Master* master)
 	memcpy(URTxBuf+4, &master->x2m, 4);
 	URTxWriteIndex = 8;	
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+	delayms(1);
 }
 
 void CreateKey(void* key, void* n)
@@ -159,6 +159,7 @@ void SendCiphertext(DHT_Data data)
 	memcpy(URTxBuf+4, &data.Hum, 4);
 	URTxWriteIndex = 8;	
 	USART_IntConfig(COM1_PORT, USART_INT_TXDE, ENABLE);
+	delayms(1);
 }
 
 /* Send encrypted temp, hum through UART to ESP8266 */
@@ -169,6 +170,7 @@ void SendCiphertext_toESP (DHT_Data data)
 	memcpy(URTxBuf2+4, &data.Hum, 4);
 	URTxWriteIndex2 = 8;	
 	USART_IntConfig(COM2_PORT, USART_INT_TXDE, ENABLE);
+	delayms(1);
 }
 
 // Source: http://www.uugear.com/portfolio/dht11-humidity-temperature-sensor-module/?fbclid=IwAR01i0nRi2Ima3vOjKyExAJkNNBw7shnxLS7Aq6wSucu_ExnubCZfM0ZNv4
