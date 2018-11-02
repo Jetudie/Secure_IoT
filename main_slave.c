@@ -83,8 +83,8 @@ int main(void)
 	NVIC_EnableIRQ(COM2_IRQn);
 	
 	// Set GPIOpin 
-	// LED1 for DHT11
-	// LED2 for Fan Control
+	// LED1, C15 for DHT11
+	// LED2, C1	 for Fan Control
 	HTCFG_OUTPUT_LED1_CLK(CKCUClock) = 1;
 	HTCFG_OUTPUT_LED2_CLK(CKCUClock) = 1;
 	GPIO_DirectionConfig(HTCFG_LED2, HTCFG_OUTPUT_LED2_GPIO_PIN, GPIO_DIR_OUT);
